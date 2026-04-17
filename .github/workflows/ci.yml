@@ -64,8 +64,8 @@ jobs:
       - name: Run iOS simulator unit tests
         run: ./gradlew :reader:iosSimulatorArm64Test :composeApp:iosSimulatorArm64Test --stacktrace
 
-      - name: Link iOS frameworks (debug)
-        run: ./gradlew :reader:linkDebugFrameworkIosSimulatorArm64 :composeApp:linkDebugFrameworkIosSimulatorArm64 --stacktrace
+      - name: Link iOS framework (debug)
+        run: ./gradlew :composeApp:linkDebugFrameworkIosSimulatorArm64 --stacktrace
 
       - name: Upload test reports
         if: failure()
