@@ -33,7 +33,12 @@ import kotlinx.serialization.json.put
 internal object ManifestJsonBuilder {
 
     private const val MANIFEST_STORE_LABEL = "c2pa"
-    private const val CLAIM_LABEL = "c2pa.claim"
+
+    // Claim box label: `c2pa.claim` for v1 manifests, `c2pa.claim.v2` for v2 (per c2pa-rs
+    // `jumbf/labels.rs`). Both carry the same CBOR shape from our perspective; the version
+    // difference is surfaced by the `claim_version` field inside the CBOR itself.
+    private val CLAIM_LABELS = listOf("c2pa.claim", "c2pa.claim.v2")
+
     private const val ASSERTIONS_LABEL = "c2pa.assertions"
     private const val CBOR_CONTENT_TYPE = "cbor"
     private const val CLAIM_THUMBNAIL_LABEL_PREFIX = "c2pa.thumbnail.claim."
@@ -116,7 +121,8 @@ internal object ManifestJsonBuilder {
         for ((k, v) in claimFields) entries[k] = v
         // Reader-synthesized fields.
         if (thumbnail != null) entries["thumbnail"] = thumbnail
-        entries.putIfAbsent("ingredients", JsonArray(emptyList()))
+        // `putIfAbsent` is a JVM-only MutableMap extension — open-coded for KMP commonMain.
+        if ("ingredients" !in entries) entries["ingredients"] = JsonArray(emptyList())
         entries["assertions"] = JsonArray(assertionsJson)
         entries["label"] = JsonPrimitive(urn)
         return JsonObject(entries)
@@ -155,20 +161,29 @@ internal object ManifestJsonBuilder {
     }
 
     private fun readClaimFields(manifestBox: JumbfSuperbox): LinkedHashMap<String, JsonElement> {
-        val claimBox = manifestBox.childSuperboxByLabel(CLAIM_LABEL)
-            ?: throw ManifestBuildException("manifest '${manifestBox.label}' missing '$CLAIM_LABEL' box")
+        val claimBox = CLAIM_LABELS.firstNotNullOfOrNull { manifestBox.childSuperboxByLabel(it) }
+            ?: throw ManifestBuildException(
+                "manifest '${manifestBox.label}' missing claim box (looked for ${CLAIM_LABELS.joinToString()})"
+            )
 
+        val claimLabel = claimBox.label
         val cborBytes = claimBox.contentByType(CBOR_CONTENT_TYPE)
-            ?: throw ManifestBuildException("'$CLAIM_LABEL' box missing '$CBOR_CONTENT_TYPE' content")
+            ?: throw ManifestBuildException("'$claimLabel' box missing '$CBOR_CONTENT_TYPE' content")
 
         val claim = CborDecoder.decode(cborBytes) as? JsonObject
-            ?: throw ManifestBuildException("'$CLAIM_LABEL' CBOR is not a map")
+            ?: throw ManifestBuildException("'$claimLabel' CBOR is not a map")
 
         val out = linkedMapOf<String, JsonElement>()
         for ((key, value) in claim) {
             if (key in CLAIM_KEYS_TO_DROP) continue
             val outKey = CLAIM_KEY_RENAMES[key] ?: key
             out[outKey] = value
+        }
+        // c2pa-rs surfaces a `claim_version` field derived from the claim box label: v2 label
+        // → `"claim_version": 2`. v1 (`c2pa.claim`) omits it. The CBOR payload itself does not
+        // carry this field — the box label is authoritative.
+        if (claimLabel == "c2pa.claim.v2") {
+            out["claim_version"] = JsonPrimitive(2)
         }
         return out
     }

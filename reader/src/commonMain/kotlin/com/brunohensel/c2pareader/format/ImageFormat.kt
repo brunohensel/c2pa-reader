@@ -6,5 +6,6 @@ package com.brunohensel.c2pareader.format
  */
 internal sealed class ImageFormat {
     data object Jpeg : ImageFormat()
+    data object Png : ImageFormat()
     data object Unknown : ImageFormat()
 }
