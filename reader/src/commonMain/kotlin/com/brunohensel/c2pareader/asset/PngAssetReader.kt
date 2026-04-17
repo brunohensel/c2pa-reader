@@ -2,7 +2,7 @@ package com.brunohensel.c2pareader.asset
 
 /**
  * Extracts the raw JUMBF manifest-store bytes from a PNG asset by walking the chunk stream
- * and returning the payload of the first `cAuI` (Content Authenticity Information) chunk.
+ * and returning the payload of the first `caBX` (Content Authenticity Information) chunk.
  *
  * ## Reference implementation
  *
