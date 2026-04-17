@@ -19,7 +19,7 @@ If the task is ambiguous, ask the user to clarify scope before proceeding.
 If the task has not already been planned, create a plan for it.
 
 ### 3. Implement
-**For data layer or viewmodel code**: use red/green/refactor, one test at a time in a tracer-bullet style.
+**use red/green/refactor**, one test at a time in a tracer-bullet style.
 1. Write a single failing test for the smallest vertical slice of behavior
 2. Run the test — confirm it fails (red)
 3. Write the minimum code to make it pass (green)
