@@ -1,0 +1,66 @@
+# built application files
+*.apk
+*.ap_
+
+# generated files
+bin/
+
+# Local configuration file (sdk path, etc)
+local.properties
+
+# IntelliJ related
+*.iml
+.idea/*
+!.idea/inspectionProfiles/
+!.idea/codeStyles/
+!.idea/externalDependencies.xml
+gen-external-apklibs/
+# Place libraries you manually add in IDE from Maven here
+lib
+
+#Gradle
+.gradle
+build/
+
+.kotlin/*
+
+coverage-error.log
+
+# Xcode
+#
+# gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore
+
+## User settings
+xcuserdata/
+
+## App packaging
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+.build/
+
+# Node.js / Web app
+node_modules/
+libraries/analytics-client/example/web/dist/
+
+# Kotlin/JS store
+kotlin-js-store/
+
+# Report files
+*.log
+reports/
+
+# Local environment
+*.local
+.env
+.env.*
+
+# IDE
+*.swp
+*.swo
+*~
+
+# Test outputs
+test-results/
+coverage/
