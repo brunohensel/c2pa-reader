@@ -184,11 +184,13 @@ internal object JpegAssetReader : AssetReader {
     }
 
     private fun assemble(group: Map<Long, ByteArray>): ByteArray {
-        val sorted = group.toSortedMap()
-        val total = sorted.values.sumOf { it.size }
+        // `toSortedMap` is a JVM-only extension; for KMP commonMain we sort the keys manually
+        // so the reassembly works on iOS too.
+        val orderedPayloads = group.keys.sorted().map { k -> group.getValue(k) }
+        val total = orderedPayloads.sumOf { it.size }
         val out = ByteArray(total)
         var offset = 0
-        for (payload in sorted.values) {
+        for (payload in orderedPayloads) {
             payload.copyInto(out, offset)
             offset += payload.size
         }

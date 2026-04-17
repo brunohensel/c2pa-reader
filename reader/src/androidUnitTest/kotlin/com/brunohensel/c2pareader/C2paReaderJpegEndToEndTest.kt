@@ -53,9 +53,10 @@ class C2paReaderJpegEndToEndTest {
     }
 
     @Test
-    fun nonJpegReturnsUnsupportedFormat() {
-        val png = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
-        assertEquals(C2paResult.Failure(C2paError.UnsupportedFormat), C2paReader.read(png))
+    fun unknownFormatReturnsUnsupportedFormat() {
+        // Arbitrary bytes that don't match any known magic (not JPEG SOI, not PNG signature).
+        val unknown = byteArrayOf(0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07)
+        assertEquals(C2paResult.Failure(C2paError.UnsupportedFormat), C2paReader.read(unknown))
     }
 
     @Test

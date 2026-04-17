@@ -1,8 +1,10 @@
 package com.brunohensel.c2pareader
 
 import com.brunohensel.c2pareader.asset.AssetReader
+import com.brunohensel.c2pareader.asset.C2paSidecarReader
 import com.brunohensel.c2pareader.asset.JpegAssetReader
 import com.brunohensel.c2pareader.asset.MalformedAssetException
+import com.brunohensel.c2pareader.asset.PngAssetReader
 import com.brunohensel.c2pareader.cbor.CborDecodeException
 import com.brunohensel.c2pareader.format.FormatDetector
 import com.brunohensel.c2pareader.format.ImageFormat
@@ -31,6 +33,8 @@ public object C2paReader {
         val reader: AssetReader = when (FormatDetector.detect(bytes)) {
             ImageFormat.Unknown -> return C2paResult.Failure(C2paError.UnsupportedFormat)
             ImageFormat.Jpeg -> JpegAssetReader
+            ImageFormat.Png -> PngAssetReader
+            ImageFormat.C2paSidecar -> C2paSidecarReader
         }
 
         val jumbfBytes = try {
