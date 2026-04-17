@@ -36,7 +36,8 @@ internal object ManifestJsonBuilder {
 
     // Claim box label: `c2pa.claim` for v1 manifests, `c2pa.claim.v2` for v2 (per c2pa-rs
     // `jumbf/labels.rs`). Both carry the same CBOR shape from our perspective; the version
-    // difference is surfaced by the `claim_version` field inside the CBOR itself.
+    // difference is derived from the enclosing JUMBF box label, not from a `claim_version`
+    // field inside the CBOR payload.
     private val CLAIM_LABELS = listOf("c2pa.claim", "c2pa.claim.v2")
 
     private const val ASSERTIONS_LABEL = "c2pa.assertions"
