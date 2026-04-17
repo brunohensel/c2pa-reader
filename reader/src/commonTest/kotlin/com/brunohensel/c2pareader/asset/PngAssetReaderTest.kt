@@ -46,6 +46,26 @@ class PngAssetReaderTest {
     }
 
     @Test
+    fun missingIendChunkThrowsMalformed() {
+        // signature + IHDR + well-formed non-terminating chunk, but no IEND before EOF.
+        val bytes = buildPng(
+            chunk("IHDR", ByteArray(13)),
+            chunk("tEXt", ByteArray(4)),
+        )
+        assertFailsWith<MalformedAssetException> { PngAssetReader.extractJumbf(bytes) }
+    }
+
+    @Test
+    fun firstChunkNotIhdrThrowsMalformed() {
+        // Spec requires IHDR first; a stream starting with tEXt is structurally invalid.
+        val bytes = buildPng(
+            chunk("tEXt", ByteArray(4)),
+            chunk("IEND", ByteArray(0)),
+        )
+        assertFailsWith<MalformedAssetException> { PngAssetReader.extractJumbf(bytes) }
+    }
+
+    @Test
     fun multipleCabxChunksUsesFirst() {
         val first = byteArrayOf(0x01, 0x02, 0x03)
         val second = byteArrayOf(0x09, 0x08, 0x07)

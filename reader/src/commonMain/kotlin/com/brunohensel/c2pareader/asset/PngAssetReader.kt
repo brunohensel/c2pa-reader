@@ -42,6 +42,7 @@ internal object PngAssetReader : AssetReader {
 
     // Chunk type codes are 4-byte ASCII. C2PA manifest store lives in a `caBX` chunk.
     private const val CHUNK_TYPE_CABX: String = "caBX"
+    private const val CHUNK_TYPE_IHDR: String = "IHDR"
     private const val CHUNK_TYPE_IEND: String = "IEND"
 
     // Each chunk has a fixed 12-byte overhead: length(4) + type(4) + CRC(4).
@@ -52,6 +53,7 @@ internal object PngAssetReader : AssetReader {
         requireSignature(bytes)
 
         var pos = SIGNATURE_SIZE
+        var firstChunk = true
         while (pos < bytes.size) {
             if (pos + CHUNK_HEADER_SIZE > bytes.size) {
                 throw MalformedAssetException("truncated PNG chunk header at offset $pos")
@@ -72,6 +74,16 @@ internal object PngAssetReader : AssetReader {
             }
 
             val type = readFourCc(bytes, pos + 4)
+            // PNG spec requires IHDR as the very first chunk. A different first chunk means the
+            // stream is malformed at a level above C2PA — surface it as such rather than sliding
+            // through and returning NoManifest.
+            if (firstChunk && type != CHUNK_TYPE_IHDR) {
+                throw MalformedAssetException(
+                    "PNG first chunk is '$type', expected '$CHUNK_TYPE_IHDR'"
+                )
+            }
+            firstChunk = false
+
             if (type == CHUNK_TYPE_CABX) {
                 return bytes.copyOfRange(payloadStart, payloadEnd)
             }
@@ -81,7 +93,10 @@ internal object PngAssetReader : AssetReader {
 
             pos = chunkEnd
         }
-        return null
+        // Reaching here means we walked every chunk to the end of the buffer without seeing
+        // IEND. PNG spec requires IEND as the terminator; its absence is structural corruption,
+        // not "well-formed but carries no manifest".
+        throw MalformedAssetException("PNG reached end of buffer without '$CHUNK_TYPE_IEND' chunk")
     }
 
     private fun requireSignature(bytes: ByteArray) {
