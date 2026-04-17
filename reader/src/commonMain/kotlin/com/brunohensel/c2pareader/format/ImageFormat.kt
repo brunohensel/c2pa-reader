@@ -7,5 +7,11 @@ package com.brunohensel.c2pareader.format
 internal sealed class ImageFormat {
     data object Jpeg : ImageFormat()
     data object Png : ImageFormat()
+
+    /**
+     * A standalone `.c2pa` sidecar: the input bytes ARE a JUMBF manifest store with no image
+     * container to strip. Detected by probing for the `jumb` box type at offset 4.
+     */
+    data object C2paSidecar : ImageFormat()
     data object Unknown : ImageFormat()
 }

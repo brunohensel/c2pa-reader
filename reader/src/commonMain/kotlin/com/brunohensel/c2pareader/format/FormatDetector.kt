@@ -9,6 +9,8 @@ internal object FormatDetector {
     fun detect(bytes: ByteArray): ImageFormat = when {
         isJpeg(bytes) -> ImageFormat.Jpeg
         isPng(bytes) -> ImageFormat.Png
+        // Sidecar probe runs last so it only fires when no image magic matched.
+        isC2paSidecar(bytes) -> ImageFormat.C2paSidecar
         else -> ImageFormat.Unknown
     }
 
@@ -29,6 +31,20 @@ internal object FormatDetector {
         if (bytes.size < PNG_SIGNATURE.size) return false
         for (i in PNG_SIGNATURE.indices) {
             if (bytes[i] != PNG_SIGNATURE[i]) return false
+        }
+        return true
+    }
+
+    // JUMBF top-level superbox type code "jumb" (ISO/IEC 19566-5) in ASCII. A C2PA standalone
+    // `.c2pa` sidecar starts with a 4-byte LBox then this 4-byte TBox at offset 4. We only
+    // sniff the TBox here — deeper structural validity (label, children) is verified by
+    // JumbfParser later and surfaced as C2paError.JumbfError if the bytes turn out malformed.
+    private val JUMB_TBOX: ByteArray = byteArrayOf(0x6A, 0x75, 0x6D, 0x62)
+
+    private fun isC2paSidecar(bytes: ByteArray): Boolean {
+        if (bytes.size < 8) return false
+        for (i in JUMB_TBOX.indices) {
+            if (bytes[4 + i] != JUMB_TBOX[i]) return false
         }
         return true
     }
