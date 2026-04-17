@@ -40,7 +40,7 @@ class C2paReaderPngEndToEndTest {
     @Test
     fun cleanPngReturnsNoManifest() {
         // Minimal PNG: signature + IHDR + IEND. Both chunks have zero-filled payload + CRC; the
-        // reader doesn't validate CRCs, so this is sufficient to exercise the "no cAuI chunk" path.
+        // reader doesn't validate CRCs, so this is sufficient to exercise the "no caBX chunk" path.
         val signature = byteArrayOf(
             0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
         )
