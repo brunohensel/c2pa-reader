@@ -24,11 +24,8 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Run JVM/Android unit tests
-        run: ./gradlew :reader:testDebugUnitTest :composeApp:testDebugUnitTest --stacktrace
-
-      - name: Assemble Android app (debug)
-        run: ./gradlew :composeApp:assembleDebug --stacktrace
+      - name: Run tests and assemble Android app
+        run: ./gradlew :reader:testDebugUnitTest :composeApp:testDebugUnitTest :composeApp:assembleDebug --stacktrace
 
       - name: Upload test reports
         if: failure()
@@ -63,9 +60,6 @@ jobs:
 
       - name: Run iOS simulator unit tests
         run: ./gradlew :reader:iosSimulatorArm64Test :composeApp:iosSimulatorArm64Test --stacktrace
-
-      - name: Link iOS framework (debug)
-        run: ./gradlew :composeApp:linkDebugFrameworkIosSimulatorArm64 --stacktrace
 
       - name: Upload test reports
         if: failure()
