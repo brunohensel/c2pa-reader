@@ -68,6 +68,21 @@ class JpegAssetReaderTest {
     }
 
     @Test
+    fun standaloneTemMarkerDoesNotDisruptExtraction() {
+        // TEM (FF 01) is a JPEG standalone marker with no length field. Before the fix it fell
+        // into the generic length-prefixed branch, making readSegmentEnd treat the next two
+        // bytes — here 4A 50, the "JP" CI of the following APP11 — as a length (0x4A50 =
+        // 19024) and throw MalformedAssetException. It should now be skipped cleanly.
+        val lboxTbox = byteArrayOf(0x00, 0x00, 0x00, 0x10, 0x6A, 0x75, 0x6D, 0x62)
+        val chunk = byteArrayOf(0xDE.toByte(), 0xAD.toByte(), 0xBE.toByte(), 0xEF.toByte())
+        val tem = byteArrayOf(0xFF.toByte(), 0x01.toByte())
+
+        val jpeg = SOI + tem + app11Fragment(en = 1, z = 1, lboxTbox = lboxTbox, chunk = chunk) + EOI
+
+        assertContentEquals(lboxTbox + chunk, JpegAssetReader.extractJumbf(jpeg))
+    }
+
+    @Test
     fun app11WithTruncatedLengthThrowsMalformed() {
         // Declare segment length = 200 but supply only a handful of bytes.
         val jpeg = SOI + byteArrayOf(

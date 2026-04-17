@@ -67,6 +67,7 @@ internal object JpegAssetReader : AssetReader {
     private const val EOI_MARKER: Int = 0xD9
     private const val SOS_MARKER: Int = 0xDA
     private const val APP11_MARKER: Int = 0xEB
+    private const val TEM_MARKER: Int = 0x01 // "temporary use" standalone marker, no length field
 
     // "JP" in ASCII — the JUMBF-in-JPEG common identifier, per ISO 19566-5.
     private const val CI_JP: Int = 0x4A50
@@ -91,6 +92,7 @@ internal object JpegAssetReader : AssetReader {
                 EOI_MARKER -> break    // end of image
                 SOS_MARKER -> break    // start of compressed data, no more APP segments
                 in 0xD0..0xD7 -> continue // RSTn restart markers have no length field
+                TEM_MARKER -> continue    // standalone "temporary use" marker, no length field
 
                 APP11_MARKER -> {
                     val segmentEnd = readSegmentEnd(bytes, pos)
@@ -99,8 +101,9 @@ internal object JpegAssetReader : AssetReader {
                 }
 
                 else -> {
-                    // Every other marker here has a length-prefixed payload. We don't need its contents;
-                    // just skip it. Reserved markers 0x01..0xBF don't appear in valid JPEGs.
+                    // Every other marker here has a length-prefixed payload. We don't need its
+                    // contents; just skip it. Reserved markers 0x02..0xBF don't appear in valid
+                    // JPEG streams.
                     val segmentEnd = readSegmentEnd(bytes, pos)
                     pos = segmentEnd
                 }

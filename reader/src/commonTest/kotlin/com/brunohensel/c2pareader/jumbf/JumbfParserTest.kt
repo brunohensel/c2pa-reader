@@ -113,6 +113,19 @@ class JumbfParserTest {
         assertTrue(ex.reason.contains("trailing"), "got: ${ex.reason}")
     }
 
+    @Test
+    fun nonAsciiTboxByteIsRejected() {
+        // TBox = 0xE9 'u' 'm' 'b' — the 0xE9 byte has the high bit set. Before the fix, the
+        // reader masked it to 0x69 ('i'), turning an invalid box type into the arbitrary
+        // ASCII string "iumb" and misrouting the parse. It now fails fast with a precise reason.
+        val payload = ByteArray(8) // any 8 bytes — the parse should fail before reaching them
+        val bytes = u32BE(16L) + byteArrayOf(0xE9.toByte(), 'u'.code.toByte(), 'm'.code.toByte(), 'b'.code.toByte()) + payload
+
+        val ex = assertFailsWith<JumbfParseException> { JumbfParser.parse(bytes) }
+        assertTrue(ex.reason.contains("non-ASCII"), "got: ${ex.reason}")
+        assertTrue(ex.reason.contains("0xE9"), "reason should include the offending byte, got: ${ex.reason}")
+    }
+
     // --- Synthetic JUMBF builders ----------------------------------------------------------------
     //
     // These helpers produce byte-exact JUMBF streams for tests. Every box header is 8 bytes:

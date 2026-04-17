@@ -195,12 +195,22 @@ private class Reader(private val bytes: ByteArray) {
         return v
     }
 
-    /** Reads 4 ASCII bytes and returns them as a string (the JUMBF TBox / FourCC). */
+    /**
+     * Reads 4 bytes and returns them as a string (the JUMBF TBox / FourCC). JUMBF TBox codes
+     * are required to be ASCII (`jumb`, `jumd`, `cbor`, `json`, `uuid`, …); any byte with the
+     * high bit set is rejected rather than silently masked — masking `0xE9` → `0x69` would
+     * alias a corrupt input onto a valid box type and misroute the parse downstream.
+     */
     fun readFourCC(): String {
         if (pos + 4 > bytes.size) throw JumbfParseException("unexpected end of JUMBF input (TBox)")
         val s = buildString(4) {
             for (i in 0 until 4) {
-                val b = bytes[pos + i].toInt() and 0x7F
+                val b = bytes[pos + i].toInt() and 0xFF
+                if (b > 0x7F) {
+                    throw JumbfParseException(
+                        "invalid non-ASCII TBox byte 0x" + b.toString(16).uppercase().padStart(2, '0')
+                    )
+                }
                 append(b.toChar())
             }
         }
