@@ -1,0 +1,178 @@
+[
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.brunohensel.c2pareader.benchmark.C2paReaderBenchmark.read",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Duser.country=US",
+            "-Duser.language=en",
+            "-Duser.variant"
+        ],
+        "jdkVersion" : "21.0.10",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.10+7-LTS",
+        "warmupIterations" : 3,
+        "warmupTime" : "2 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "2 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "fixture" : "firefly_tabby_cat.jpg"
+        },
+        "primaryMetric" : {
+            "score" : 12.095120026922455,
+            "scoreError" : 0.4916600283001869,
+            "scoreConfidence" : [
+                11.603459998622268,
+                12.586780055222642
+            ],
+            "scorePercentiles" : {
+                "0.0" : 11.982277532644032,
+                "50.0" : 12.080318863456984,
+                "90.0" : 12.310063899803536,
+                "95.0" : 12.310063899803536,
+                "99.0" : 12.310063899803536,
+                "99.9" : 12.310063899803536,
+                "99.99" : 12.310063899803536,
+                "99.999" : 12.310063899803536,
+                "99.9999" : 12.310063899803536,
+                "100.0" : 12.310063899803536
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    12.310063899803536,
+                    12.01794905237416,
+                    11.982277532644032,
+                    12.080318863456984,
+                    12.084990786333565
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.brunohensel.c2pareader.benchmark.C2paReaderBenchmark.read",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Duser.country=US",
+            "-Duser.language=en",
+            "-Duser.variant"
+        ],
+        "jdkVersion" : "21.0.10",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.10+7-LTS",
+        "warmupIterations" : 3,
+        "warmupTime" : "2 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "2 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "fixture" : "chatgpt_image.png"
+        },
+        "primaryMetric" : {
+            "score" : 12.183757915952487,
+            "scoreError" : 0.20934370951593462,
+            "scoreConfidence" : [
+                11.974414206436553,
+                12.393101625468422
+            ],
+            "scorePercentiles" : {
+                "0.0" : 12.111993059205162,
+                "50.0" : 12.168151906971651,
+                "90.0" : 12.249524277781855,
+                "95.0" : 12.249524277781855,
+                "99.0" : 12.249524277781855,
+                "99.9" : 12.249524277781855,
+                "99.99" : 12.249524277781855,
+                "99.999" : 12.249524277781855,
+                "99.9999" : 12.249524277781855,
+                "100.0" : 12.249524277781855
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    12.168151906971651,
+                    12.249524277781855,
+                    12.111993059205162,
+                    12.225140136942034,
+                    12.163980198861738
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    },
+    {
+        "jmhVersion" : "1.37",
+        "benchmark" : "com.brunohensel.c2pareader.benchmark.C2paReaderBenchmark.read",
+        "mode" : "avgt",
+        "threads" : 1,
+        "forks" : 1,
+        "jvm" : "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home/bin/java",
+        "jvmArgs" : [
+            "-Dfile.encoding=UTF-8",
+            "-Duser.country=US",
+            "-Duser.language=en",
+            "-Duser.variant"
+        ],
+        "jdkVersion" : "21.0.10",
+        "vmName" : "OpenJDK 64-Bit Server VM",
+        "vmVersion" : "21.0.10+7-LTS",
+        "warmupIterations" : 3,
+        "warmupTime" : "2 s",
+        "warmupBatchSize" : 1,
+        "measurementIterations" : 5,
+        "measurementTime" : "2 s",
+        "measurementBatchSize" : 1,
+        "params" : {
+            "fixture" : "chatgpt_image.c2pa"
+        },
+        "primaryMetric" : {
+            "score" : 10.542257035236018,
+            "scoreError" : 0.15531193597883503,
+            "scoreConfidence" : [
+                10.386945099257183,
+                10.697568971214853
+            ],
+            "scorePercentiles" : {
+                "0.0" : 10.47252305193279,
+                "50.0" : 10.55474371864587,
+                "90.0" : 10.57142344976069,
+                "95.0" : 10.57142344976069,
+                "99.0" : 10.57142344976069,
+                "99.9" : 10.57142344976069,
+                "99.99" : 10.57142344976069,
+                "99.999" : 10.57142344976069,
+                "99.9999" : 10.57142344976069,
+                "100.0" : 10.57142344976069
+            },
+            "scoreUnit" : "us/op",
+            "rawData" : [
+                [
+                    10.47252305193279,
+                    10.545260311626217,
+                    10.55474371864587,
+                    10.57142344976069,
+                    10.567334644214528
+                ]
+            ]
+        },
+        "secondaryMetrics" : {
+        }
+    }
+]
+
+

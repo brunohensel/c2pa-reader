@@ -70,3 +70,27 @@ jobs:
             **/build/reports/tests/**
             **/build/test-results/**
           if-no-files-found: ignore
+
+  benchmark:
+    name: Benchmark (compare to baseline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Run benchmark and compare to archived baseline
+        run: ./gradlew compareBenchmark --stacktrace
+
+      - name: Upload current run JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-current-run
+          path: benchmark/build/reports/benchmarks/main/**/jvm.json
+          if-no-files-found: ignore
