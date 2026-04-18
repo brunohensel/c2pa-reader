@@ -25,6 +25,11 @@ open class C2paReaderBenchmark {
         "firefly_tabby_cat.jpg",
         "chatgpt_image.png",
         "chatgpt_image.c2pa",
+        // Phase 3: only the TIFF fixture from c2pa-rs has real embedded C2PA data. Pre-signed
+        // HEIC and WebP fixtures are not shipped by c2pa-rs, so benchmarking them here would
+        // only measure the detector's NoManifest/UnsupportedFormat fast-path. Add them once
+        // real fixtures are available.
+        "100kb-signed.tiff",
     )
     lateinit var fixture: String
 

@@ -1,10 +1,13 @@
 package com.brunohensel.c2pareader
 
 import com.brunohensel.c2pareader.asset.AssetReader
+import com.brunohensel.c2pareader.asset.BmffAssetReader
 import com.brunohensel.c2pareader.asset.C2paSidecarReader
 import com.brunohensel.c2pareader.asset.JpegAssetReader
 import com.brunohensel.c2pareader.asset.MalformedAssetException
 import com.brunohensel.c2pareader.asset.PngAssetReader
+import com.brunohensel.c2pareader.asset.RiffAssetReader
+import com.brunohensel.c2pareader.asset.TiffAssetReader
 import com.brunohensel.c2pareader.cbor.CborDecodeException
 import com.brunohensel.c2pareader.format.FormatDetector
 import com.brunohensel.c2pareader.format.ImageFormat
@@ -35,6 +38,9 @@ public object C2paReader {
             ImageFormat.Jpeg -> JpegAssetReader
             ImageFormat.Png -> PngAssetReader
             ImageFormat.C2paSidecar -> C2paSidecarReader
+            ImageFormat.Heif -> BmffAssetReader
+            ImageFormat.Webp -> RiffAssetReader
+            ImageFormat.Tiff -> TiffAssetReader
         }
 
         val jumbfBytes = try {
