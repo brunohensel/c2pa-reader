@@ -1,95 +1,176 @@
 package com.brunohensel.c2pareader.manifest
 
 import com.brunohensel.c2pareader.C2paResult
+import kotlinx.serialization.DeserializationStrategy
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonContentPolymorphicSerializer
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Extracts a [ManifestSummary] from the reader's JSON output for display in the gallery UI.
  *
- * The reader's output has already had crypto/validation/ingredient fields stripped
- * (see `filterUnsupportedFields` in the reader tests), so this function only reads:
- * top-level `claim_generator`, `title`, `format`, and `assertions[*].data.actions[*]`
- * entries whose `label` starts with `c2pa.actions`.
+ * Uses kotlinx.serialization typed data classes with label-dispatched polymorphism on
+ * assertions: the per-assertion `data` shape depends on `label`, so a
+ * [JsonContentPolymorphicSerializer] picks the right [Assertion] subtype by inspecting `label`
+ * before decoding. `softwareAgent` (either a String or an `{name}` Object in the wild) is
+ * normalized to a plain String via a dedicated serializer.
  *
- * Walks every entry of `manifests` (not just `active_manifest`) so that AI/tool signals
- * living in child manifests still surface when the active one only has `c2pa.opened`.
+ * Every manifest is walked (not just `active_manifest`) so AI signals carried by child manifests
+ * still surface when the active one only has `c2pa.opened`.
  */
 fun summarize(result: C2paResult): ManifestSummary? {
     val success = result as? C2paResult.Success ?: return null
-    val root = runCatching { Json.parseToJsonElement(success.json).jsonObject }.getOrNull()
-        ?: return null
-    val manifests = (root["manifests"] as? JsonObject)?.takeIf { it.isNotEmpty() } ?: return null
+    println("HENSEL DEBUG: summarize got JSON: ${success.json}")
+    val root = runCatching { json.decodeFromString<Root>(success.json) }.getOrNull() ?: return null
+    if (root.manifests.isEmpty()) return null
 
-    val activeUrn = (root["active_manifest"] as? JsonPrimitive)?.contentOrNullSafe()
-    val active = activeUrn?.let { manifests[it] as? JsonObject } ?: manifests.values.firstOrNull() as? JsonObject
+    val active =
+        root.activeManifest?.let { root.manifests[it] } ?: root.manifests.values.firstOrNull()
 
-    // IPTC digitalSourceType URIs. Ref: https://cv.iptc.org/newscodes/digitalsourcetype/
-    val aiGeneratedTypes = setOf(
-        "trainedAlgorithmicMedia",
-        "compositeWithTrainedAlgorithmicMedia",
-        "trainedAlgorithmicRefinedMedia",
+    val best = root.manifests.values
+        .asSequence()
+        .flatMap { it.assertions.asSequence() }
+        .filterIsInstance<ActionsAssertion>()
+        .flatMap { it.data.actions.asSequence() }
+        .map { it.toCandidate() }
+        .maxByOrNull { it.score }
+        ?: EMPTY_CANDIDATE
+
+    return ManifestSummary(
+        aiStatus = best.status,
+        tool = best.tool ?: active?.claimGenerator,
+        action = best.action,
+        title = active?.title,
+        format = active?.format,
     )
-    val aiEditedTypes = setOf(
-        "algorithmicMedia",
-        "algorithmicallyEnhanced",
-        "compositeCapture",
-    )
+}
 
-    var best: Candidate? = null
-    for ((_, manifest) in manifests) {
-        val mObj = manifest as? JsonObject ?: continue
-        val assertions = (mObj["assertions"] as? JsonArray) ?: continue
-        for (assertion in assertions) {
-            val aObj = assertion as? JsonObject ?: continue
-            val label = (aObj["label"] as? JsonPrimitive)?.contentOrNullSafe() ?: continue
-            if (!label.startsWith("c2pa.actions")) continue
-            val actions = (aObj["data"] as? JsonObject)?.get("actions") as? JsonArray ?: continue
-            for (action in actions) {
-                val actObj = action as? JsonObject ?: continue
-                val actionName = (actObj["action"] as? JsonPrimitive)?.contentOrNullSafe()
-                val dst = (actObj["digitalSourceType"] as? JsonPrimitive)?.contentOrNullSafe()
-                val suffix = dst?.substringAfterLast('/')
-                val status = when (suffix) {
-                    in aiGeneratedTypes -> AiStatus.AI_GENERATED
-                    in aiEditedTypes -> AiStatus.AI_EDITED
-                    null -> AiStatus.UNKNOWN
-                    else -> AiStatus.NOT_AI
-                }
-                val tool = actObj["softwareAgent"]?.toSoftwareAgentName()
-                val candidate = Candidate(status, actionName, tool)
-                val current = best
-                if (current == null || candidate.beats(current)) best = candidate
-            }
+private val json = Json { ignoreUnknownKeys = true }
+
+@Serializable
+private data class Root(
+    @SerialName("active_manifest") val activeManifest: String? = null,
+    val manifests: Map<String, Manifest> = emptyMap(),
+)
+
+@Serializable
+private data class Manifest(
+    @SerialName("claim_generator") val claimGenerator: String? = null,
+    val title: String? = null,
+    val format: String? = null,
+    val assertions: List<Assertion> = emptyList(),
+)
+
+@Serializable(with = AssertionSerializer::class)
+private sealed interface Assertion {
+    val label: String
+}
+
+@Serializable
+private data class ActionsAssertion(
+    override val label: String,
+    val data: ActionsData = ActionsData(),
+) : Assertion
+
+@Serializable
+private data class OtherAssertion(
+    override val label: String,
+) : Assertion
+
+/**
+ * Dispatches on the `label` field: anything starting with `c2pa.actions` is decoded as an
+ * [ActionsAssertion]; everything else as [OtherAssertion]. Keeps the outer decode total — no
+ * single misshapen assertion (e.g. a `c2pa.hash.data` payload with its own schema) can break the
+ * whole manifest decode.
+ */
+private object AssertionSerializer : JsonContentPolymorphicSerializer<Assertion>(Assertion::class) {
+    override fun selectDeserializer(element: JsonElement): DeserializationStrategy<Assertion> {
+        val label = element.jsonObject["label"]?.jsonPrimitive?.content.orEmpty()
+        return if (label.startsWith("c2pa.actions")) ActionsAssertion.serializer() else OtherAssertion.serializer()
+    }
+}
+
+@Serializable
+private data class ActionsData(
+    val actions: List<Action> = emptyList(),
+)
+
+@Serializable
+private data class Action(
+    val action: String? = null,
+    @Serializable(with = SoftwareAgentSerializer::class)
+    val softwareAgent: String? = null,
+    val digitalSourceType: String? = null,
+)
+
+/**
+ * `softwareAgent` is polymorphic in the C2PA actions schema:
+ *   - v1 actions: plain String (e.g. "Adobe Firefly").
+ *   - v2 actions: `{ name: String, version?: String, ... }` Object.
+ * Normalized to the name String so downstream code stays simple.
+ */
+private object SoftwareAgentSerializer : KSerializer<String?> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("SoftwareAgent", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): String? {
+        val jsonDecoder = decoder as? JsonDecoder ?: return null
+        return when (val element = jsonDecoder.decodeJsonElement()) {
+            is JsonPrimitive -> if (element.isString) element.content else null
+            is JsonObject -> (element["name"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+            else -> null
         }
     }
 
-    val fallbackTool = (active?.get("claim_generator") as? JsonPrimitive)?.contentOrNullSafe()
-    val title = (active?.get("title") as? JsonPrimitive)?.contentOrNullSafe()
-    val format = (active?.get("format") as? JsonPrimitive)?.contentOrNullSafe()
+    @OptIn(ExperimentalSerializationApi::class)
+    override fun serialize(encoder: Encoder, value: String?) {
+        if (value != null) encoder.encodeString(value) else encoder.encodeNull()
+    }
+}
 
-    return ManifestSummary(
-        aiStatus = best?.status ?: AiStatus.UNKNOWN,
-        tool = best?.tool ?: fallbackTool,
-        action = best?.action,
-        title = title,
-        format = format,
-    )
+// IPTC digitalSourceType URIs. Ref: https://cv.iptc.org/newscodes/digitalsourcetype/
+private val aiGeneratedSuffixes = setOf(
+    "trainedAlgorithmicMedia",
+    "compositeWithTrainedAlgorithmicMedia",
+    "trainedAlgorithmicRefinedMedia",
+)
+private val aiEditedSuffixes = setOf(
+    "algorithmicMedia",
+    "algorithmicallyEnhanced",
+    "compositeCapture",
+)
+
+private fun Action.toCandidate(): Candidate {
+    val suffix = digitalSourceType?.substringAfterLast('/')
+    val status = when (suffix) {
+        in aiGeneratedSuffixes -> AiStatus.AI_GENERATED
+        in aiEditedSuffixes -> AiStatus.AI_EDITED
+        null -> AiStatus.UNKNOWN
+        else -> AiStatus.NOT_AI
+    }
+    return Candidate(status, action, softwareAgent)
 }
 
 private data class Candidate(val status: AiStatus, val action: String?, val tool: String?) {
-    fun beats(other: Candidate): Boolean {
-        // Prefer stronger AI status first, then prefer a candidate that carries a tool name.
-        if (status.rank != other.status.rank) return status.rank > other.status.rank
-        if (tool != null && other.tool == null) return true
-        return false
-    }
+    // Prefer a stronger AI status first; break ties in favor of candidates that carry a tool name.
+    val score: Int = status.rank * 2 + if (tool != null) 1 else 0
 }
+
+private val EMPTY_CANDIDATE = Candidate(AiStatus.UNKNOWN, action = null, tool = null)
 
 private val AiStatus.rank: Int
     get() = when (this) {
@@ -98,12 +179,3 @@ private val AiStatus.rank: Int
         AiStatus.NOT_AI -> 1
         AiStatus.UNKNOWN -> 0
     }
-
-private fun kotlinx.serialization.json.JsonElement.toSoftwareAgentName(): String? = when (this) {
-    is JsonPrimitive -> contentOrNullSafe()
-    is JsonObject -> (this["name"] as? JsonPrimitive)?.contentOrNullSafe()
-    else -> null
-}
-
-private fun JsonPrimitive.contentOrNullSafe(): String? =
-    if (isString) content else content.takeIf { it.isNotEmpty() && it != "null" }
