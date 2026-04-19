@@ -70,7 +70,7 @@ internal object JpegXlAssetReader : AssetReader {
 
         var pos = 0
         while (pos < bytes.size) {
-            val header = readBoxHeader(bytes, pos)
+            val header = readBmffBoxHeader(bytes, pos, label = "JXL")
             if (header.type == TYPE_JUMB && isC2paLabeled(bytes, header.payloadStart, header.boxEnd)) {
                 return bytes.copyOfRange(pos, header.boxEnd)
             }
@@ -81,14 +81,20 @@ internal object JpegXlAssetReader : AssetReader {
 
     /**
      * Peeks at the `jumb` box interior to see if its first child is a `jumd` description
-     * carrying the `"c2pa"` label. Returns false for any other label or for malformed
-     * interiors — malformations surface later if this turns out to be the only candidate
-     * (caller returns `null`, then a truly malformed file is caught by [JumbfParser]).
+     * carrying the `"c2pa"` label. Returns `false` for any other label and also for `jumb`
+     * interiors too short or structurally unusual to inspect.
+     *
+     * Returning `false` tells the caller in [extractJumbf] to skip this `jumb` box and keep
+     * scanning siblings for another candidate. If no candidate ever matches the `"c2pa"`
+     * label, [extractJumbf] returns `null` and the orchestrator reports `NoManifest` —
+     * [JumbfParser] is never invoked on a skipped box. We accept that a genuinely corrupt
+     * `jumb` labeled anything-but-c2pa may be silently skipped; that's symmetric with the
+     * rest of the library (non-C2PA `uuid` boxes are also skipped without being parsed).
      */
     private fun isC2paLabeled(bytes: ByteArray, payloadStart: Int, boxEnd: Int): Boolean {
         // Minimum viable jumd: header(8) + UUID(16) + toggle(1) + "c2pa"(4) + NUL(1) = 30 bytes.
         if (boxEnd - payloadStart < 30) return false
-        val jumdHeader = readBoxHeader(bytes, payloadStart)
+        val jumdHeader = readBmffBoxHeader(bytes, payloadStart, label = "JXL")
         if (jumdHeader.type != TYPE_JUMD) return false
         // jumd payload: contentTypeUUID(16) + toggle(1) + optional null-terminated label.
         val labelStart = jumdHeader.payloadStart + 16 + 1
@@ -103,68 +109,9 @@ internal object JpegXlAssetReader : AssetReader {
         return label == C2PA_LABEL
     }
 
-    private data class BoxHeader(val type: String, val payloadStart: Int, val boxEnd: Int)
-
-    /**
-     * Reads an ISOBMFF box header at [pos]. JXL uses the same box format as HEIF, so this
-     * mirrors the [BmffAssetReader] header walker (size 0 → rest of file, size 1 → 8-byte
-     * largesize follows, any `2..7` → invalid).
-     */
-    private fun readBoxHeader(bytes: ByteArray, pos: Int): BoxHeader {
-        if (pos + 8 > bytes.size) {
-            throw MalformedAssetException("truncated JXL box header at offset $pos")
-        }
-        val size32 = readUint32BE(bytes, pos)
-        val type = readFourCc(bytes, pos + 4)
-
-        val (totalSize: Long, headerSize: Int) = when (size32) {
-            0L -> (bytes.size - pos).toLong() to 8
-            1L -> {
-                if (pos + 16 > bytes.size) {
-                    throw MalformedAssetException("truncated JXL large-box header at offset $pos")
-                }
-                val largesize = readUint64BE(bytes, pos + 8)
-                if (largesize < 16L) {
-                    throw MalformedAssetException("invalid JXL largesize $largesize at offset $pos")
-                }
-                largesize to 16
-            }
-            else -> {
-                if (size32 < 8L) {
-                    throw MalformedAssetException("invalid JXL box size $size32 at offset $pos")
-                }
-                size32 to 8
-            }
-        }
-        val boxEndLong = pos.toLong() + totalSize
-        if (boxEndLong > bytes.size) {
-            throw MalformedAssetException(
-                "JXL box at offset $pos claims size $totalSize, exceeds remaining bytes"
-            )
-        }
-        return BoxHeader(type = type, payloadStart = pos + headerSize, boxEnd = boxEndLong.toInt())
-    }
-
     private fun startsWith(bytes: ByteArray, sig: ByteArray): Boolean {
         if (bytes.size < sig.size) return false
         for (i in sig.indices) if (bytes[i] != sig[i]) return false
         return true
-    }
-
-    private fun readUint32BE(bytes: ByteArray, pos: Int): Long =
-        ((bytes[pos].toLong() and 0xFF) shl 24) or
-            ((bytes[pos + 1].toLong() and 0xFF) shl 16) or
-            ((bytes[pos + 2].toLong() and 0xFF) shl 8) or
-            (bytes[pos + 3].toLong() and 0xFF)
-
-    private fun readUint64BE(bytes: ByteArray, pos: Int): Long {
-        var v = 0L
-        for (i in 0 until 8) v = (v shl 8) or (bytes[pos + i].toLong() and 0xFF)
-        if (v < 0L) throw MalformedAssetException("JXL largesize overflows Long at offset $pos")
-        return v
-    }
-
-    private fun readFourCc(bytes: ByteArray, pos: Int): String = buildString(4) {
-        for (i in 0 until 4) append((bytes[pos + i].toInt() and 0xFF).toChar())
     }
 }

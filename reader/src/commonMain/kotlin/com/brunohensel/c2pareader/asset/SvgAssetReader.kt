@@ -33,14 +33,18 @@ import kotlin.io.encoding.ExperimentalEncodingApi
  * issue #1). Pulling in kotlinx.xml or any DOM parser would break that invariant and expand
  * the binary footprint on every platform target. The scanner has three jobs:
  *
- * 1. Find the opening `<c2pa:manifest` tag (skipping comments, CDATA, and any content that
- *    shows up before the element — but not validating the full XML grammar).
+ * 1. Walk the document top to bottom, skipping the lexical regions where a `<c2pa:manifest`
+ *    string match would be a false positive — XML comments (`<!--…-->`), CDATA sections
+ *    (`<![CDATA[…]]>`), processing instructions (`<?…?>`), end tags, and declarations — to
+ *    find a real opening `<c2pa:manifest` tag.
  * 2. Skip the tag's attributes to reach the end of the opening tag.
  * 3. Slurp text up to the closing `</c2pa:manifest>` and base64-decode it.
  *
- * Anything outside that happy path — unterminated tags, invalid base64, the element present
- * twice — is surfaced as [MalformedAssetException]. "No `<c2pa:manifest>` element at all" is
- * a normal outcome and returns `null` so the orchestrator reports `NoManifest`.
+ * Anything structurally broken on the happy path — unterminated tags, truncated open tag,
+ * invalid base64 — is surfaced as [MalformedAssetException]. "No `<c2pa:manifest>` element
+ * at all" is a normal outcome and returns `null` so the orchestrator reports `NoManifest`.
+ * If multiple matching `<c2pa:manifest>` elements are present, the first match wins; the
+ * scanner does not validate uniqueness (matches c2pa-rs `svg_io.rs`).
  *
  * ## Tolerance scope
  *
@@ -88,21 +92,83 @@ internal object SvgAssetReader : AssetReader {
     }
 
     /**
-     * Locates the `<c2pa:manifest` element. Accepts only an opening tag whose next character
-     * is whitespace, `>`, or `/` — so `<c2pa:manifest_other>` is not misidentified as the
-     * manifest element.
+     * Locates a real `<c2pa:manifest` opening tag. Returns the byte offset of the leading `<`,
+     * or `-1` if no such tag exists anywhere in the document.
+     *
+     * The scanner walks the input in document order and steps past every lexical region where
+     * a literal `<c2pa:manifest` string would be a false positive:
+     *
+     * - XML comments (`<!-- … -->`)
+     * - CDATA sections (`<![CDATA[ … ]]>`)
+     * - Processing instructions and XML declarations (`<? … ?>`)
+     * - Any other tag's attribute list (so `>` inside a quoted attribute value is honored
+     *   and a neighboring element named `<c2pa:manifest_other>` is not misidentified)
+     * - End tags (`</…>`) and declarations (`<!DOCTYPE…>`, `<!ENTITY…>`)
+     *
+     * When it hits a `<c2pa:manifest` token whose next character is `>`, `/`, or whitespace,
+     * that's a real opening tag and the function returns its offset.
+     *
+     * The one case where we intentionally surface corruption to the caller: a `<c2pa:manifest`
+     * token that runs off the end of the buffer before the delimiter character is seen. We
+     * return the hit offset so the caller's tag-end scanner throws `Malformed` rather than
+     * swallowing a clearly truncated manifest tag as "no manifest".
      */
     private fun findOpenTag(text: String): Int {
-        var searchFrom = 0
-        while (true) {
-            val hit = text.indexOf(OPEN_TAG, startIndex = searchFrom)
-            if (hit < 0) return -1
-            val nextIdx = hit + OPEN_TAG.length
-            if (nextIdx >= text.length) return -1
-            val next = text[nextIdx]
-            if (next == '>' || next == '/' || next.isWhitespace()) return hit
-            searchFrom = nextIdx
+        var i = 0
+        while (i < text.length) {
+            if (text[i] != '<') { i++; continue }
+            when {
+                startsWithAt(text, i, "<!--") -> {
+                    val end = text.indexOf("-->", startIndex = i + 4)
+                    if (end < 0) return -1
+                    i = end + 3
+                }
+                startsWithAt(text, i, "<![CDATA[") -> {
+                    val end = text.indexOf("]]>", startIndex = i + 9)
+                    if (end < 0) return -1
+                    i = end + 3
+                }
+                startsWithAt(text, i, "<?") -> {
+                    val end = text.indexOf("?>", startIndex = i + 2)
+                    if (end < 0) return -1
+                    i = end + 2
+                }
+                startsWithAt(text, i, "<!") -> {
+                    // Declarations like <!DOCTYPE …> / <!ENTITY …>. May contain quoted literals
+                    // and an internal subset `[ … ]`; skip to the terminating `>` carefully.
+                    val end = findDeclarationEnd(text, i + 2) ?: return -1
+                    i = end + 1
+                }
+                startsWithAt(text, i, "</") -> {
+                    val end = findOpenTagEnd(text, i + 2) ?: return -1
+                    i = end + 1
+                }
+                startsWithAt(text, i, OPEN_TAG) -> {
+                    val nextIdx = i + OPEN_TAG.length
+                    if (nextIdx >= text.length) {
+                        // Buffer ends mid-tag. Return the hit so findOpenTagEnd surfaces this
+                        // as a Malformed truncation instead of misreporting NoManifest.
+                        return i
+                    }
+                    val next = text[nextIdx]
+                    if (next == '>' || next == '/' || next.isWhitespace()) return i
+                    // e.g. `<c2pa:manifest_other>` — keep scanning past this tag's own open.
+                    val end = findOpenTagEnd(text, i + 1) ?: return -1
+                    i = end + 1
+                }
+                else -> {
+                    // Any other start-of-tag: walk to its `>` so we don't re-scan its interior.
+                    val end = findOpenTagEnd(text, i + 1) ?: return -1
+                    i = end + 1
+                }
+            }
         }
+        return -1
+    }
+
+    private fun startsWithAt(text: String, index: Int, prefix: String): Boolean {
+        if (index + prefix.length > text.length) return false
+        return text.regionMatches(index, prefix, 0, prefix.length)
     }
 
     /**
@@ -121,6 +187,31 @@ internal object SvgAssetReader : AssetReader {
                 quote != null -> { /* inside attribute value; keep consuming */ }
                 c == '"' || c == '\'' -> quote = c
                 c == '>' -> return i
+            }
+            i++
+        }
+        return null
+    }
+
+    /**
+     * Returns the index of the `>` that terminates a `<!…>` declaration starting at [from], or
+     * null if it runs off the end. Quoted literals (`"…"` / `'…'`) and internal subset brackets
+     * (`[…]`) are honored so a `>` inside either of those doesn't terminate the declaration
+     * prematurely.
+     */
+    private fun findDeclarationEnd(text: String, from: Int): Int? {
+        var i = from
+        var quote: Char? = null
+        var bracketDepth = 0
+        while (i < text.length) {
+            val c = text[i]
+            when {
+                quote != null && c == quote -> quote = null
+                quote != null -> { /* inside quoted literal; keep consuming */ }
+                c == '"' || c == '\'' -> quote = c
+                c == '[' -> bracketDepth++
+                c == ']' && bracketDepth > 0 -> bracketDepth--
+                c == '>' && bracketDepth == 0 -> return i
             }
             i++
         }

@@ -134,6 +134,43 @@ class SvgAssetReaderTest {
     }
 
     @Test
+    fun manifestStringInsideCommentIsIgnored() {
+        // The literal substring `<c2pa:manifest` appears inside an XML comment but no real
+        // manifest element exists. A naive indexOf-based scanner would match the comment text
+        // and then throw Malformed on the missing close tag; the tokenizing scanner must skip
+        // comment regions entirely and return null (NoManifest).
+        val svg = """
+            <svg xmlns="http://www.w3.org/2000/svg">
+              <!-- placeholder for <c2pa:manifest xmlns:c2pa="http://c2pa.org/manifest"> -->
+              <rect/>
+            </svg>
+        """.trimIndent().encodeToByteArray()
+        assertNull(SvgAssetReader.extractJumbf(svg))
+    }
+
+    @Test
+    fun manifestStringInsideCdataIsIgnored() {
+        // Same concern as comments but for `<![CDATA[ … ]]>`. Must be skipped without false match.
+        val svg = """
+            <svg xmlns="http://www.w3.org/2000/svg">
+              <metadata>
+                <![CDATA[<c2pa:manifest xmlns:c2pa="http://c2pa.org/manifest">ignored</c2pa:manifest>]]>
+              </metadata>
+            </svg>
+        """.trimIndent().encodeToByteArray()
+        assertNull(SvgAssetReader.extractJumbf(svg))
+    }
+
+    @Test
+    fun fileEndingExactlyOnOpenTagThrowsMalformed() {
+        // Buffer ends exactly with `<c2pa:manifest` — no delimiter char follows. A naive
+        // "next char must be whitespace/>//" check would return -1 (NoManifest) and silently
+        // drop a clearly truncated manifest tag; the scanner must surface this as Malformed.
+        val svg = """<svg><metadata><c2pa:manifest""".encodeToByteArray()
+        assertFailsWith<MalformedAssetException> { SvgAssetReader.extractJumbf(svg) }
+    }
+
+    @Test
     fun attributeValueContainingGreaterThanIsSkipped() {
         // XML 1.0 allows `>` inside attribute values. The tag-end scanner must respect quotes so
         // it doesn't prematurely think the opening tag ended at the attribute-embedded `>`.
