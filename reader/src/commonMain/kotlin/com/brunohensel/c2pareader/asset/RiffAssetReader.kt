@@ -25,6 +25,14 @@ package com.brunohensel.c2pareader.asset
  * The pad byte is NOT counted in `chunkSize`; the walker must advance `chunkSize + (size & 1)`
  * bytes past the header to reach the next chunk. All integers in RIFF are little-endian.
  *
+ * ## `fileSize` bounding
+ *
+ * The RIFF chunk is semantically everything in `[0, 8 + fileSize)`. Anything after that is
+ * outside the RIFF (some encoders pad files to a 4 KB alignment boundary for disk-efficient
+ * writes). This reader bounds its chunk walk to the declared end so trailing alignment bytes
+ * don't look like a malformed chunk header. If the declared size runs PAST the buffer end,
+ * the file was truncated — we surface that up front instead of walking into the shortfall.
+ *
  * C2PA piggy-backs on WebP only (audio/video RIFF forms — WAVE, AVI — are explicitly out of
  * scope). [FormatDetector] gates on the form type before we get here; this reader re-validates
  * defensively.
@@ -57,9 +65,25 @@ internal object RiffAssetReader : AssetReader {
             }
         }
 
+        // Read the declared RIFF chunk size and bound subsequent walking to it. `fileSize`
+        // counts bytes AFTER the size field, so the RIFF spans [0, 8 + fileSize). Validate
+        // early so we don't walk chunks just to discover the same malformation at the end.
+        val fileSize = readUint32LE(bytes, 4)
+        if (fileSize < 4L) {
+            // Must at least cover the 4-byte formType field.
+            throw MalformedAssetException("RIFF fileSize $fileSize too small to contain formType")
+        }
+        val declaredEnd = 8L + fileSize
+        if (declaredEnd > bytes.size.toLong()) {
+            throw MalformedAssetException(
+                "RIFF declares $declaredEnd total bytes, buffer is ${bytes.size} (file truncated)"
+            )
+        }
+        val riffEnd = declaredEnd.toInt()
+
         var pos = RIFF_HEADER_SIZE
-        while (pos < bytes.size) {
-            if (pos + CHUNK_HEADER_SIZE > bytes.size) {
+        while (pos < riffEnd) {
+            if (pos + CHUNK_HEADER_SIZE > riffEnd) {
                 throw MalformedAssetException("truncated RIFF chunk header at offset $pos")
             }
             val chunkSizeLong = readUint32LE(bytes, pos + 4)
@@ -69,9 +93,9 @@ internal object RiffAssetReader : AssetReader {
             val chunkSize = chunkSizeLong.toInt()
             val payloadStart = pos + CHUNK_HEADER_SIZE
             val payloadEnd = payloadStart + chunkSize
-            if (payloadEnd > bytes.size) {
+            if (payloadEnd > riffEnd) {
                 throw MalformedAssetException(
-                    "RIFF chunk at offset $pos claims size $chunkSize, exceeds remaining bytes"
+                    "RIFF chunk at offset $pos claims size $chunkSize, exceeds declared RIFF end"
                 )
             }
             if (matches(bytes, pos, C2PA_ID)) {

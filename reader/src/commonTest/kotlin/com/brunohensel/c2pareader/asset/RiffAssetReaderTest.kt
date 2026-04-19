@@ -52,12 +52,39 @@ class RiffAssetReaderTest {
     }
 
     @Test
-    fun truncatedChunkSizeThrowsMalformed() {
-        // C2PA chunk declares 1000 bytes but only a handful are present.
+    fun declaredFileSizeExceedingBufferThrowsMalformed() {
+        // RIFF declares 100 bytes of payload (so 108 total), but the buffer is only 24 bytes.
+        // The declared-vs-buffer mismatch is surfaced at the RIFF header, before any chunk walk.
         val header = "RIFF".encodeToByteArray() + u32LE(100) + "WEBP".encodeToByteArray()
         val bogus = "C2PA".encodeToByteArray() + u32LE(1000) + byteArrayOf(0x00, 0x01, 0x02, 0x03)
         val webp = header + bogus
         assertFailsWith<MalformedAssetException> { RiffAssetReader.extractJumbf(webp) }
+    }
+
+    @Test
+    fun innerChunkExceedingDeclaredRiffEndThrowsMalformed() {
+        // RIFF fileSize itself is consistent with the buffer, but an inner chunk declares a
+        // payload that overruns the declared RIFF end. Caught by the chunk walker, not the
+        // header-level early-throw.
+        val chunks = "C2PA".encodeToByteArray() + u32LE(1000) + byteArrayOf(0x00, 0x01, 0x02, 0x03)
+        val body = "WEBP".encodeToByteArray() + chunks
+        val webp = "RIFF".encodeToByteArray() + u32LE(body.size) + body
+        assertFailsWith<MalformedAssetException> { RiffAssetReader.extractJumbf(webp) }
+    }
+
+    @Test
+    fun trailingBytesPastDeclaredFileSizeAreIgnored() {
+        // Some WebP writers pad files to a disk-alignment boundary; bytes past the declared
+        // RIFF end are outside the container and must not look like malformed chunk headers.
+        // Walker must stop at `8 + fileSize` and still locate the C2PA chunk in front of it.
+        val manifest = byteArrayOf(0x11, 0x22, 0x33, 0x44)
+        val webp = buildRiff(
+            formType = "WEBP",
+            chunks = listOf(chunk("VP8X", ByteArray(10)), chunk("C2PA", manifest)),
+        )
+        // 16 bytes of trailing zero padding, outside the RIFF.
+        val padded = webp + ByteArray(16)
+        assertContentEquals(manifest, RiffAssetReader.extractJumbf(padded))
     }
 
     @Test
