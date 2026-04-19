@@ -30,11 +30,6 @@ private val initialBundled: List<GalleryImage.Bundled> = listOf(
         resourcePath = "files/firefly_tabby_cat.jpg",
     ),
     GalleryImage.Bundled(
-        id = "tiff-signed",
-        label = "100kb signed (TIFF)",
-        resourcePath = "files/100kb-signed.tiff",
-    ),
-    GalleryImage.Bundled(
         id = "phase3-webp",
         label = "Phase 3 test (WebP)",
         resourcePath = "files/sample1.webp",
