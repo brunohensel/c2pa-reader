@@ -12,6 +12,8 @@ internal object FormatDetector {
         isHeif(bytes) -> ImageFormat.Heif
         isWebp(bytes) -> ImageFormat.Webp
         isTiff(bytes) -> ImageFormat.Tiff
+        isJpegXl(bytes) -> ImageFormat.JpegXl
+        isSvg(bytes) -> ImageFormat.Svg
         // Sidecar probe runs last so it only fires when no image magic matched.
         isC2paSidecar(bytes) -> ImageFormat.C2paSidecar
         else -> ImageFormat.Unknown
@@ -115,5 +117,105 @@ internal object FormatDetector {
             if (bytes[4 + i] != JUMB_TBOX[i]) return false
         }
         return true
+    }
+
+    // JPEG XL (ISO/IEC 18181-2 §A.1) ISOBMFF container signature. The first top-level box is a
+    // 12-byte `JXL ` box whose payload is the fixed sequence `0D 0A 87 0A` (matches PNG's
+    // newline/DOS-transfer-trap trick for detecting line-ending mangling in transit). c2pa-rs
+    // jpegxl_io.rs stores this as `JXL_CONTAINER_MAGIC`.
+    private val JXL_CONTAINER_SIG: ByteArray = byteArrayOf(
+        0x00, 0x00, 0x00, 0x0C,
+        0x4A, 0x58, 0x4C, 0x20,                         // "JXL "
+        0x0D, 0x0A, 0x87.toByte(), 0x0A,
+    )
+
+    // JPEG XL (ISO/IEC 18181-1 §9.1) naked codestream sync marker: `FF 0A`. Two bytes is a weak
+    // signature, but nothing else on our allow-list starts with it (JPEG is `FF D8`). C2PA bans
+    // manifests in naked codestreams, so the reader returns `null` (→ NoManifest) rather than
+    // extracting anything.
+    private val JXL_CODESTREAM_SIG: ByteArray = byteArrayOf(0xFF.toByte(), 0x0A)
+
+    private fun isJpegXl(bytes: ByteArray): Boolean =
+        prefixMatches(bytes, JXL_CONTAINER_SIG) || prefixMatches(bytes, JXL_CODESTREAM_SIG)
+
+    private fun prefixMatches(bytes: ByteArray, sig: ByteArray): Boolean {
+        if (bytes.size < sig.size) return false
+        for (i in sig.indices) if (bytes[i] != sig[i]) return false
+        return true
+    }
+
+    // Maximum byte prefix we inspect when sniffing SVG. Real SVGs start with at most a BOM + an
+    // XML declaration + a DOCTYPE + a few comments before the root element; 512 bytes comfortably
+    // covers that without loading the whole file into the scan.
+    private const val SVG_SNIFF_WINDOW: Int = 512
+
+    // SVG is a text format, so we detect by locating the `<svg` root after any XML prologue.
+    // Tolerant to: UTF-8 BOM, leading whitespace, `<?xml ... ?>`, `<!DOCTYPE ... >`, `<!-- ... -->`.
+    private fun isSvg(bytes: ByteArray): Boolean {
+        if (bytes.isEmpty()) return false
+        var i = 0
+        // UTF-8 BOM: EF BB BF.
+        if (bytes.size >= 3 &&
+            bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte()
+        ) {
+            i = 3
+        }
+        val end = minOf(bytes.size, i + SVG_SNIFF_WINDOW)
+        while (i < end) {
+            val b = bytes[i].toInt() and 0xFF
+            // Skip ASCII whitespace (space, tab, CR, LF).
+            if (b == 0x20 || b == 0x09 || b == 0x0D || b == 0x0A) { i++; continue }
+            if (b != 0x3C /* '<' */) return false
+            // Next token starts with '<'; figure out which one.
+            when {
+                startsWith(bytes, i, "<?xml") -> {
+                    val pEnd = indexOf(bytes, "?>", i + 5, end)
+                    if (pEnd < 0) return false
+                    i = pEnd + 2
+                }
+                startsWith(bytes, i, "<!--") -> {
+                    val pEnd = indexOf(bytes, "-->", i + 4, end)
+                    if (pEnd < 0) return false
+                    i = pEnd + 3
+                }
+                startsWith(bytes, i, "<!DOCTYPE") || startsWith(bytes, i, "<!doctype") -> {
+                    val pEnd = indexOf(bytes, ">", i + 9, end)
+                    if (pEnd < 0) return false
+                    i = pEnd + 1
+                }
+                startsWith(bytes, i, "<svg") -> {
+                    // Must be followed by whitespace, `>`, or `/` — not `<svgfoo`.
+                    if (i + 4 >= bytes.size) return true
+                    val next = bytes[i + 4].toInt() and 0xFF
+                    return next == 0x20 || next == 0x09 || next == 0x0D || next == 0x0A ||
+                        next == 0x3E /* '>' */ || next == 0x2F /* '/' */
+                }
+                else -> return false
+            }
+        }
+        return false
+    }
+
+    private fun startsWith(bytes: ByteArray, offset: Int, literal: String): Boolean {
+        if (offset + literal.length > bytes.size) return false
+        for (i in literal.indices) {
+            if (bytes[offset + i].toInt().toChar() != literal[i]) return false
+        }
+        return true
+    }
+
+    private fun indexOf(bytes: ByteArray, needle: String, from: Int, end: Int): Int {
+        val needleBytes = needle.encodeToByteArray()
+        val last = end - needleBytes.size
+        var i = from
+        while (i <= last) {
+            var match = true
+            for (j in needleBytes.indices) {
+                if (bytes[i + j] != needleBytes[j]) { match = false; break }
+            }
+            if (match) return i
+            i++
+        }
+        return -1
     }
 }
