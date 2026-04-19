@@ -4,5 +4,7 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Used to pick images for C2PA manifest inspection.</string>
 </dict>
 </plist>
