@@ -36,8 +36,9 @@ class C2paReaderWebpEndToEndTest {
 
     @Test
     fun cleanWebpReturnsNoManifest() {
+        // RIFF `fileSize` counts bytes AFTER the size field: formType(4) + VP8L chunk(8) = 12.
         val clean = "RIFF".encodeToByteArray() +
-            u32LE(12 + 8) +
+            u32LE(12) +
             "WEBP".encodeToByteArray() +
             "VP8L".encodeToByteArray() + u32LE(0)
         assertEquals(C2paResult.Failure(C2paError.NoManifest), C2paReader.read(clean))

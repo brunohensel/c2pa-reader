@@ -128,8 +128,8 @@ class FormatDetectorTest {
 
     @Test
     fun webpRiffIsDetected() {
-        // RIFF (ITU-T Rec. H.264 Annex A; Microsoft Multimedia): "RIFF" + size(LE,4) + formType(4).
-        // formType "WEBP" (RFC-ish: libwebp container spec) classifies as ImageFormat.Webp.
+        // RIFF (Microsoft Multimedia Programming Interface): "RIFF" + size(LE,4) + formType(4).
+        // formType "WEBP" (libwebp container spec) classifies as ImageFormat.Webp.
         val bytes = "RIFF".encodeToByteArray() +
             byteArrayOf(0x00, 0x00, 0x00, 0x00) +
             "WEBP".encodeToByteArray()
