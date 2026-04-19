@@ -25,6 +25,19 @@ internal sealed class ImageFormat {
     data object Tiff : ImageFormat()
 
     /**
+     * JPEG XL (ISO/IEC 18181). Either the ISOBMFF-style container (12-byte `JXL ` signature box
+     * as the first top-level box) or the naked codestream (`FF 0A` sync marker). Only the
+     * container form can carry a C2PA manifest; codestream reports `NoManifest`.
+     */
+    data object JpegXl : ImageFormat()
+
+    /**
+     * SVG (Scalable Vector Graphics, W3C). Detected by locating a `<svg` root element after an
+     * optional BOM, XML declaration, DOCTYPE, or comments.
+     */
+    data object Svg : ImageFormat()
+
+    /**
      * A standalone `.c2pa` sidecar: the input bytes ARE a JUMBF manifest store with no image
      * container to strip. Detected by probing for the `jumb` box type at offset 4.
      */

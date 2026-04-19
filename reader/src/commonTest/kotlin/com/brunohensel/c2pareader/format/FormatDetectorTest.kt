@@ -182,6 +182,91 @@ class FormatDetectorTest {
         assertEquals(ImageFormat.Unknown, FormatDetector.detect(bytes))
     }
 
+    // --- JPEG XL ------------------------------------------------------------------------------
+
+    @Test
+    fun jxlContainerSignatureIsDetected() {
+        // ISO/IEC 18181-2 §A.1: a JXL ISOBMFF container starts with the fixed 12-byte "JXL " box
+        // `00 00 00 0C 4A 58 4C 20 0D 0A 87 0A`. Anything that follows is subsequent top-level
+        // boxes, not part of the signature.
+        val bytes = byteArrayOf(
+            0x00, 0x00, 0x00, 0x0C,
+            0x4A, 0x58, 0x4C, 0x20,
+            0x0D, 0x0A, 0x87.toByte(), 0x0A,
+            // a following `ftyp` box (not required for detection, but realistic)
+            0x00, 0x00, 0x00, 0x14,
+            0x66, 0x74, 0x79, 0x70,
+            0x6A, 0x78, 0x6C, 0x20, 0, 0, 0, 0,
+        )
+        assertEquals(ImageFormat.JpegXl, FormatDetector.detect(bytes))
+    }
+
+    @Test
+    fun jxlCodestreamSyncMarkerIsDetected() {
+        // ISO/IEC 18181-1 §9.1: the naked-codestream sync marker is `FF 0A`. Only 2 bytes, so
+        // the detector stakes on the fact that no other entry in the allow-list starts with it.
+        val bytes = byteArrayOf(0xFF.toByte(), 0x0A, 0x00, 0x00)
+        assertEquals(ImageFormat.JpegXl, FormatDetector.detect(bytes))
+    }
+
+    @Test
+    fun jxlContainerSignatureWithBrokenMagicIsUnknown() {
+        // Same shape as a JXL container but the trailing `0D 0A 87 0A` quartet is scrambled —
+        // must not classify as JXL (or anything else).
+        val bytes = byteArrayOf(
+            0x00, 0x00, 0x00, 0x0C,
+            0x4A, 0x58, 0x4C, 0x20,
+            0x00, 0x00, 0x00, 0x00,
+        )
+        assertEquals(ImageFormat.Unknown, FormatDetector.detect(bytes))
+    }
+
+    // --- SVG ----------------------------------------------------------------------------------
+
+    @Test
+    fun svgRootElementIsDetected() {
+        val bytes = """<svg xmlns="http://www.w3.org/2000/svg"/>""".encodeToByteArray()
+        assertEquals(ImageFormat.Svg, FormatDetector.detect(bytes))
+    }
+
+    @Test
+    fun svgWithXmlDeclarationAndDoctypeIsDetected() {
+        // Typical SVG file shape from editors like Inkscape: XML declaration, optional DOCTYPE,
+        // then the root element. The sniffer must skip over both to find `<svg`.
+        val svg = """<?xml version="1.0" encoding="UTF-8"?>
+            |<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+            |<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>""".trimMargin()
+        assertEquals(ImageFormat.Svg, FormatDetector.detect(svg.encodeToByteArray()))
+    }
+
+    @Test
+    fun svgWithLeadingWhitespaceAndCommentsIsDetected() {
+        val svg = "\n  <!-- created by hand -->\n<svg/>"
+        assertEquals(ImageFormat.Svg, FormatDetector.detect(svg.encodeToByteArray()))
+    }
+
+    @Test
+    fun svgWithUtf8BomIsDetected() {
+        // UTF-8 BOM (EF BB BF) is optional on XML files; the sniffer must skip it rather than
+        // treating it as arbitrary leading bytes.
+        val body = "<svg/>".encodeToByteArray()
+        val bom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
+        assertEquals(ImageFormat.Svg, FormatDetector.detect(bom + body))
+    }
+
+    @Test
+    fun xmlThatIsNotSvgIsUnknown() {
+        val xml = """<?xml version="1.0"?><note>not svg</note>""".encodeToByteArray()
+        assertEquals(ImageFormat.Unknown, FormatDetector.detect(xml))
+    }
+
+    @Test
+    fun svgPrefixOfLongerElementNameIsUnknown() {
+        // Guards against a naive indexOf("<svg") matching `<svglike` and mis-classifying.
+        val bogus = """<svglike xmlns="x"/>""".encodeToByteArray()
+        assertEquals(ImageFormat.Unknown, FormatDetector.detect(bogus))
+    }
+
     // --- helpers -------------------------------------------------------------------------------
 
     /** Build a minimal ISOBMFF file starting with a single `ftyp` box (no body beyond major+minor). */

@@ -67,7 +67,7 @@ internal object BmffAssetReader : AssetReader {
     override fun extractJumbf(bytes: ByteArray): ByteArray? {
         var pos = 0
         while (pos < bytes.size) {
-            val header = readBoxHeader(bytes, pos)
+            val header = readBmffBoxHeader(bytes, pos, label = "BMFF")
             val payloadStart = header.payloadStart
             val boxEnd = header.boxEnd
             if (header.type == TYPE_UUID) {
@@ -119,63 +119,4 @@ internal object BmffAssetReader : AssetReader {
         return bytes.copyOfRange(jumbfStart, boxEnd)
     }
 
-    private data class BoxHeader(val type: String, val payloadStart: Int, val boxEnd: Int)
-
-    private fun readBoxHeader(bytes: ByteArray, pos: Int): BoxHeader {
-        if (pos + 8 > bytes.size) {
-            throw MalformedAssetException("truncated BMFF box header at offset $pos")
-        }
-        val size32 = readUint32BE(bytes, pos)
-        val type = readFourCc(bytes, pos + 4)
-
-        val (totalSize: Long, headerSize: Int) = when (size32) {
-            // size == 0: runs to end of file (only legal outermost; treat as such).
-            0L -> (bytes.size - pos).toLong() to 8
-            // size == 1: 8-byte extended largesize follows.
-            1L -> {
-                if (pos + 16 > bytes.size) {
-                    throw MalformedAssetException("truncated BMFF large-box header at offset $pos")
-                }
-                val largesize = readUint64BE(bytes, pos + 8)
-                if (largesize < 16L) {
-                    throw MalformedAssetException("invalid BMFF largesize $largesize at offset $pos")
-                }
-                largesize to 16
-            }
-            else -> {
-                if (size32 < 8L) {
-                    throw MalformedAssetException("invalid BMFF box size $size32 at offset $pos")
-                }
-                size32 to 8
-            }
-        }
-        val boxEndLong = pos.toLong() + totalSize
-        if (boxEndLong > bytes.size) {
-            throw MalformedAssetException(
-                "BMFF box at offset $pos claims size $totalSize, exceeds remaining bytes"
-            )
-        }
-        return BoxHeader(type = type, payloadStart = pos + headerSize, boxEnd = boxEndLong.toInt())
-    }
-
-    private fun readUint32BE(bytes: ByteArray, pos: Int): Long =
-        ((bytes[pos].toLong() and 0xFF) shl 24) or
-            ((bytes[pos + 1].toLong() and 0xFF) shl 16) or
-            ((bytes[pos + 2].toLong() and 0xFF) shl 8) or
-            (bytes[pos + 3].toLong() and 0xFF)
-
-    private fun readUint64BE(bytes: ByteArray, pos: Int): Long {
-        // Negative values would wrap to > Long.MAX_VALUE unsigned — reject them, since any
-        // BMFF file that large is nonsense for our ByteArray-only API.
-        var v = 0L
-        for (i in 0 until 8) {
-            v = (v shl 8) or (bytes[pos + i].toLong() and 0xFF)
-        }
-        if (v < 0L) throw MalformedAssetException("BMFF largesize overflows Long at offset $pos")
-        return v
-    }
-
-    private fun readFourCc(bytes: ByteArray, pos: Int): String = buildString(4) {
-        for (i in 0 until 4) append((bytes[pos + i].toInt() and 0xFF).toChar())
-    }
 }
