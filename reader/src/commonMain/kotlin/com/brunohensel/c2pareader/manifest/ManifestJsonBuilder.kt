@@ -5,6 +5,7 @@ import com.brunohensel.c2pareader.jumbf.JumbfContentBox
 import com.brunohensel.c2pareader.jumbf.JumbfSuperbox
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -42,7 +43,9 @@ internal object ManifestJsonBuilder {
 
     private const val ASSERTIONS_LABEL = "c2pa.assertions"
     private const val CBOR_CONTENT_TYPE = "cbor"
+    private const val JSON_CONTENT_TYPE = "json"
     private const val CLAIM_THUMBNAIL_LABEL_PREFIX = "c2pa.thumbnail.claim."
+    private val json = Json { ignoreUnknownKeys = false }
 
     /**
      * Top-level labels that live structurally in the manifest store but are NOT surfaced in
@@ -198,16 +201,25 @@ internal object ManifestJsonBuilder {
                 val label = sub.label ?: return@filter false
                 INTERNAL_ASSERTION_LABEL_PREFIXES.none { prefix -> label.startsWith(prefix) }
             }
-            .map { sub -> buildAssertionJson(sub) }
+            .mapNotNull { sub -> buildAssertionJsonOrNull(sub) }
     }
 
-    private fun buildAssertionJson(assertionBox: JumbfSuperbox): JsonObject {
+    private fun buildAssertionJsonOrNull(assertionBox: JumbfSuperbox): JsonObject? {
         val label = assertionBox.label
             ?: throw ManifestBuildException("assertion box has no label")
-        val cborBytes = assertionBox.contentByType(CBOR_CONTENT_TYPE)
-            ?: throw ManifestBuildException("assertion '$label' has no '$CBOR_CONTENT_TYPE' content")
-
-        val data = CborDecoder.decode(cborBytes)
+        val data = when {
+            assertionBox.contentByType(CBOR_CONTENT_TYPE) != null ->
+                CborDecoder.decode(assertionBox.contentByType(CBOR_CONTENT_TYPE)!!)
+            assertionBox.contentByType(JSON_CONTENT_TYPE) != null -> {
+                val jsonBytes = assertionBox.contentByType(JSON_CONTENT_TYPE)!!
+                try {
+                    json.parseToJsonElement(jsonBytes.decodeToString())
+                } catch (e: IllegalArgumentException) {
+                    throw ManifestBuildException("assertion '$label' JSON is not valid UTF-8/JSON")
+                }
+            }
+            else -> return null
+        }
         return buildJsonObject {
             put("label", label)
             put("data", data)
