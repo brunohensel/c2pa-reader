@@ -33,6 +33,10 @@ import kotlinx.serialization.json.jsonPrimitive
  * still surface when the active one only has `c2pa.opened`.
  */
 fun summarize(result: C2paResult): ManifestSummary? {
+    if (result is C2paResult.Failure) {
+        println("HENSEL DEBUG: summarize got error: ${result.error}")
+        return null
+    }
     val success = result as? C2paResult.Success ?: return null
     println("HENSEL DEBUG: summarize got JSON: ${success.json}")
     val root = runCatching { json.decodeFromString<Root>(success.json) }.getOrNull() ?: return null

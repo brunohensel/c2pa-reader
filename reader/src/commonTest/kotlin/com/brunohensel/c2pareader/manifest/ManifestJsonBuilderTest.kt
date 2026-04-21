@@ -108,6 +108,33 @@ class ManifestJsonBuilderTest {
     }
 
     @Test
+    fun binaryAssertionsAreSkippedInsteadOfFailingBuild() {
+        val claimCbor = TestCbor.map("dc:title" to TestCbor.text("x"))
+        val tree = manifestStore(
+            manifest(
+                "urn:a",
+                claimBox(claimCbor),
+                assertionsBox(
+                    assertionBox("c2pa.actions.v2", TestCbor.map("k" to TestCbor.text("v"))),
+                    JumbfSuperbox(
+                        label = "c2pa.icon",
+                        children = listOf(
+                            JumbfContentBox("bfdb", "image/svg+xml".encodeToByteArray()),
+                            JumbfContentBox("bidb", "<svg/>".encodeToByteArray()),
+                        ),
+                    ),
+                ),
+            )
+        )
+
+        val json = ManifestJsonBuilder.build(tree)
+        val m = (json["manifests"] as JsonObject)["urn:a"] as JsonObject
+        val labels = (m["assertions"] as JsonArray).map { (it.jsonObject["label"] as JsonPrimitive).content }
+
+        assertEquals(listOf("c2pa.actions.v2"), labels)
+    }
+
+    @Test
     fun internalClaimKeysAreDropped() {
         val claimCbor = TestCbor.map(
             "dc:title" to TestCbor.text("keep"),
